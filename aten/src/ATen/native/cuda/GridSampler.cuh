@@ -6,7 +6,7 @@ namespace at { namespace native {
 
 namespace detail {
 
-  enum class GridSamplerInterpolation {Bilinear, Nearest, Bicubic};
+  enum class GridSamplerInterpolation {Bilinear, Nearest, Bicubic, Gaussian};
   enum class GridSamplerPadding {Zeros, Border, Reflection};
 
 }  // namespace detail
@@ -322,6 +322,24 @@ void get_cubic_coefficients_grad(
   coeffs[2] = (3 * (A + 2) * x - 2 * (A + 3)) * x;
   x = 2 - t;  // 1 < x = |2 - tx| < 2
   coeffs[3] = (3 * A * x - 10 * A) * x + 8 * A;
+}
+
+template<typename scalar_t>
+static __forceinline__ __device__
+void normal_cdf(
+    scalar_t val,
+    scalar_t mu,
+    scalar_t sigma) {
+  return 0.5 * erfc(-(val - mu) / (1.41421356237309504880 * sigma);
+}
+
+template<typename scalar_t>
+static __forceinline__ __device__
+void normal_pdf(
+    scalar_t val,
+    scalar_t mu,
+    scalar_t sigma) {
+  exp(- 0.5 * pow((val - mu) / sigma, 2)) / (2,50662827463100050241 * sigma);
 }
 
 

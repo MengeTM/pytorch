@@ -2235,9 +2235,9 @@
 # `interpolation_mode` because it only supports Bilinear interpolation mode.
 # Nor does it take in `align_corners` because it only supports the mode
 # `align_corners = True`.
-- func: grid_sampler(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners) -> Tensor
+- func: grid_sampler(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, int kernel_size=3, float kernel_std=0.25) -> Tensor
 
-- func: grid_sampler_2d(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners) -> Tensor
+- func: grid_sampler_2d(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, int kernel_size=3, float kernel_std=0.25) -> Tensor
   dispatch:
     CPU, QuantizedCPU: grid_sampler_2d_cpu
     CUDA: grid_sampler_2d_cuda
@@ -2245,24 +2245,24 @@
 # `grid_sampler_2d_backward` takes in `output_mask` to optimize performance for
 # the case where `input` doesn't require gradient. Gradient for `grid` is always
 # computed (only `output_mask[0]` is checked by the implementations).
-- func: grid_sampler_2d_backward(Tensor grad_output, Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, bool[2] output_mask) -> (Tensor, Tensor)
+- func: grid_sampler_2d_backward(Tensor grad_output, Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, int kernel_size=3, float kernel_std=0.25, bool[2] output_mask) -> (Tensor, Tensor)
   dispatch:
     CPU: grid_sampler_2d_backward_cpu
     CUDA: grid_sampler_2d_backward_cuda
 
 # See NOTE [ grid_sample CPU fallback ]
-- func: _grid_sampler_2d_cpu_fallback(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners) -> Tensor
+- func: _grid_sampler_2d_cpu_fallback(Tensor input, Tensor grid, int interpolation_mode, int kernel_size=3, float kernel_std=0.25) -> Tensor
   dispatch:
     CompositeExplicitAutograd: _grid_sampler_2d_cpu_fallback
 
-- func: _grid_sampler_2d_cpu_fallback_backward(Tensor grad_output, Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners) -> (Tensor, Tensor)
+- func: _grid_sampler_2d_cpu_fallback_backward(Tensor grad_output, Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, int kernel_size=3, float kernel_std=0.25) -> (Tensor, Tensor)
 
-- func: grid_sampler_3d(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners) -> Tensor
+- func: grid_sampler_3d(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, int kernel_size=3, float kernel_std=0.25) -> Tensor
   dispatch:
     CPU: grid_sampler_3d_cpu
     CUDA: grid_sampler_3d_cuda
 
-- func: grid_sampler_3d_backward(Tensor grad_output, Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners) -> (Tensor, Tensor)
+- func: grid_sampler_3d_backward(Tensor grad_output, Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, int kernel_size=3, float kernel_std=0.25) -> (Tensor, Tensor)
   dispatch:
     CPU: grid_sampler_3d_backward_cpu
     CUDA: grid_sampler_3d_backward_cuda

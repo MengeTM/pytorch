@@ -24,7 +24,9 @@ namespace {
       TensorInfo<scalar_t, index_t> output,
       const GridSamplerInterpolation interpolation_mode,
       const GridSamplerPadding padding_mode,
-      bool align_corners) {
+      bool align_corners,
+      const index_t kernel_size, // For Gaussian kernel
+      const scalar_t kernel_std) {  // For Gaussian kernel
     index_t C = input.sizes[1];
     index_t inp_H = input.sizes[2];
     index_t inp_W = input.sizes[3];
@@ -138,6 +140,57 @@ namespace {
             coefficients[3],
             ty);
         }
+      } else if (interpolation_mode == GridSamplerInterpolation::Gaussian) {
+
+        const index_t ix_k = static_cast<index_t>(::floor(ix));
+        const index_t iy_k = static_cast<index_t>(::floor(iy));
+
+        // start index of Gaussian kernel
+        const index_t ix_nw = ix_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+        const index_t iy_nw = iy_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+
+        scalar_t sumw = static_cast<scalar_t>(0.0);
+        index_t i, j, c;
+        for(i=0; i < f; i++){
+          for(j=0; j < f; j++){
+
+            // get surfaces to each neighbor:
+            index_t ix_p = ix_nw + i;
+            index_t iy_p = iy_nw + j;
+
+            index_t ix_p_cl, iy_p_cl;
+            if (padding_mode == GridSamplerPadding::Border){
+              //  clip coordinates to image borders
+              ix_p_cl = clip_coordinates(ix_p, inp_W);
+              iy_p_cl = clip_coordinates(iy_p, inp_H);
+            } else if (padding_mode == GridSamplerPadding::Reflection) {
+              // reflect coordinates to image borders
+              ix_p_cl = reflect_coordinates(ix_p, static_cast<index_t>(0.0), 2 * inp_W);
+              iy_p_cl = reflect_coordinates(iy_p, static_cast<index_t>(0.0), 2 * inp_H);
+            } else {
+              ix_p_cl = ix_p;
+              iy_p_cl = iy_p;
+            }
+
+            // if antecedant value in image bounds
+            if within_bounds_2d(ix_p_cl, iy_p_cl, inp_W, inp_H){
+              scalar_t xw =  normal_cdf(ix_p + 1.0, ix + 0.5, kernel_std) - normal_cdf(ix_p, ix + 0.5, kernel_std);
+              scalar_t yw =  normal_cdf(iy_p + 1.0, iy + 0.5, kernel_std) - normal_cdf(iy_p, iy + 0.5, kernel_std);
+
+              // calculate Gaussian weighted pixel value and set output pixel
+              sumw += xw * yw;
+
+              for (c = 0; c < C; ++c) {
+                  output[n][c][h][w] =+ input[n][c][iy_p_cl][ix_p_cl] * yw * xw;
+              }
+            }
+          }
+        }
+        for (c = 0; c < C; ++c) {
+          if(sumw > 0){
+            output[n][c][h][w] /= sumw;
+          }
+        }
       }
     }
   }
@@ -151,7 +204,9 @@ namespace {
       TensorInfo<scalar_t, index_t> output,
       const GridSamplerInterpolation interpolation_mode,
       const GridSamplerPadding padding_mode,
-      bool align_corners) {
+      bool align_corners,
+      const index_t kernel_size, // For Gaussian kernel
+      const scalar_t kernel_std) { // For Gaussian kernel
 
     index_t C = input.sizes[1];
     index_t inp_D = input.sizes[2];
@@ -286,6 +341,65 @@ namespace {
             *out_ptr_NCDHW = static_cast<scalar_t>(0);
           }
         }
+      } else if (interpolation_mode == GridSamplerInterpolation::Gaussian) {
+
+        const index_t ix_k = static_cast<index_t>(::floor(ix));
+        const index_t iy_k = static_cast<index_t>(::floor(iy));
+        const index_t iz_k = static_cast<index_t>(::floor(iz));
+
+        // start index of Gaussian kernel
+        const index_t ix_nw = ix_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+        const index_t iy_nw = iy_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+        const index_t iz_nw = iy_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+
+        scalar_t sumw = static_cast<scalar_t>(0.0);
+        index_t i, j, k, c;
+        for(i=0; i < f; i++){
+          for(j=0; j < f; j++){
+            for(k=0; k < f; k++){
+              // get surfaces to each neighbor:
+              index_t ix_p = ix_nw + i;
+              index_t iy_p = iy_nw + j;
+              index_t iz_p = iz_nw + j;
+
+              index_t ix_p_cl, iy_p_cl, iz_p_cl;
+              if (padding_mode == GridSamplerPadding::Border){
+                //  clip coordinates to image borders
+                ix_p_cl = clip_coordinates(ix_p, inp_W);
+                iy_p_cl = clip_coordinates(iy_p, inp_H);
+                iz_p_cl = clip_coordinates(iz_p, inp_D);
+              } else if (padding_mode == GridSamplerPadding::Reflection) {
+                // reflect coordinates to image borders
+                ix_p_cl = reflect_coordinates(ix_p, static_cast<index_t>(0.0), 2 * inp_W);
+                iy_p_cl = reflect_coordinates(iy_p, static_cast<index_t>(0.0), 2 * inp_H);
+                iz_p_cl = reflect_coordinates(iz_p, static_cast<index_t>(0.0), 2 * inp_D);
+              } else {
+                ix_p_cl = ix_p;
+                iy_p_cl = iy_p;
+                iz_p_cl = iz_p;
+              }
+
+              // if antecedant value in image bounds
+              if within_bounds_3d(ix_p_cl, iy_p_cl, iz_p_cl, inp_W, inp_H, inp_Z){
+                scalar_t xw =  normal_cdf(ix_p + 1.0, ix + 0.5, kernel_std) - normal_cdf(ix_p, ix + 0.5, kernel_std);
+                scalar_t yw =  normal_cdf(iy_p + 1.0, iy + 0.5, kernel_std) - normal_cdf(iy_p, iy + 0.5, kernel_std);
+                scalar_t zw =  normal_cdf(iz_p + 1.0, iz + 0.5, kernel_std) - normal_cdf(iz_p, iz + 0.5, kernel_std);
+
+                // calculate Gaussian weighted pixel value and set output pixel
+                sumw += xw * yw * zw;
+
+                for (c = 0; c < C; ++c) {
+                    output[n][c][d][h][w] += input[n][c][iz_p_cl][iy_p_cl][ix_p_cl] * yw * xw * zw;
+                }
+              }
+            }
+          }
+        }
+        for (c = 0; c < C; ++c) {
+          if(sumw > 0){
+            output[n][c][d][h][w] /= sumw;
+          }
+        }
       }
     }
   }
@@ -308,6 +422,8 @@ namespace {
       const GridSamplerInterpolation interpolation_mode,
       const GridSamplerPadding padding_mode,
       bool align_corners,
+      const index_t kernel_size, // For Gaussian kernel
+      const scalar_t kernel_std, // For Gaussian kernel
       const index_t grad_input_memory_span,
       const bool input_requires_grad) {
 
@@ -498,6 +614,116 @@ namespace {
         scalar_t *gGrid_ptr_NHW = grad_grid.data + index * gGrid_sW;
         gGrid_ptr_NHW[0] = gix_mult * gix;
         gGrid_ptr_NHW[1] = giy_mult * giy;
+      } else if (interpolation_mode == GridSamplerInterpolation::Gaussian) {
+        index_t gix = static_cast<index_t>(0.0);
+        index_t giy = static_cast<index_t>(0.0);
+
+        const index_t ix_k = static_cast<index_t>(::floor(ix));
+        const index_t iy_k = static_cast<index_t>(::floor(iy));
+
+        // start index of Gaussian kernel
+        const index_t ix_nw = ix_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+        const index_t iy_nw = iy_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+
+        scalar_t sumw = static_cast<scalar_t>(0.0);
+        index_t i, j, c;
+        for(i=0; i < f; i++){
+          for(j=0; j < f; j++){
+
+            // get surfaces to each neighbor:
+            index_t ix_p = ix_nw + i;
+            index_t iy_p = iy_nw + j;
+
+            index_t ix_p_cl, iy_p_cl;
+            if (padding_mode == GridSamplerPadding::Border){
+              //  clip coordinates to image borders
+              ix_p_cl = clip_coordinates(ix_p, inp_W);
+              iy_p_cl = clip_coordinates(iy_p, inp_H);
+            } else if (padding_mode == GridSamplerPadding::Reflection) {
+              // reflect coordinates to image borders
+              ix_p_cl = reflect_coordinates(ix_p, static_cast<index_t>(0.0), 2 * inp_W);
+              iy_p_cl = reflect_coordinates(iy_p, static_cast<index_t>(0.0), 2 * inp_H);
+            } else {
+              ix_p_cl = ix_p;
+              iy_p_cl = iy_p;
+            }
+
+            // if antecedant value in image bounds
+            if within_bounds_2d(ix_p_cl, iy_p_cl, inp_W, inp_H){
+              scalar_t xw =  normal_cdf(ix_p + 1.0, ix + 0.5, kernel_std) - normal_cdf(ix_p, ix + 0.5, kernel_std);
+              scalar_t yw =  normal_cdf(iy_p + 1.0, iy + 0.5, kernel_std) - normal_cdf(iy_p, iy + 0.5, kernel_std);
+
+              // calculate Gaussian weighted pixel value and set output pixel
+              sumw += xw * yw;
+            }
+          }
+        }
+
+
+        scalar_t sumvw = static_cast<scalar_t>(0.);
+        scalar_t sumdwdgix = static_cast<scalar_t>(0.);
+        scalar_t sumdwdgiy = static_cast<scalar_t>(0.);
+        scalar_t sumvdwdgix = static_cast<scalar_t>(0.);
+        scalar_t sumvdwdgiy = static_cast<scalar_t>(0.);
+        scalar_t sumvgo = static_cast<scalar_t>(0.);
+
+        for(i=0; i < kernel_size; i++){
+          for(j=0; j < kernel_size; j++){
+            // get surfaces to each neighbor:
+            index_t ix_p = ix_nw + i;
+            index_t iy_p = iy_nw + j;
+
+            index_t ix_p_cl, iy_p_cl;
+            if (padding_mode == GridSamplerPadding::Border){
+              //  clip coordinates to image borders
+              ix_p_cl = clip_coordinates(ix_p, inp_W);
+              iy_p_cl = clip_coordinates(iy_p, inp_H);
+            } else if (padding_mode == GridSamplerPadding::Reflection) {
+              // reflect coordinates to image borders
+              ix_p_cl = reflect_coordinates(ix_p, static_cast<index_t>(0.0), 2 * inp_W);
+              iy_p_cl = reflect_coordinates(iy_p, static_cast<index_t>(0.0), 2 * inp_H);
+            } else {
+              ix_p_cl = ix_p;
+              iy_p_cl = iy_p;
+            }
+
+            // if antecedant value in image bounds
+            if within_bounds_2d(ix_p_cl, iy_p_cl, inp_W, inp_H){
+              scalar_t xw =  normal_cdf(ix_p + 1.0, ix + 0.5, kernel_std) - normal_cdf(ix_p, ix + 0.5, kernel_std);
+              scalar_t yw =  normal_cdf(iy_p + 1.0, iy + 0.5, kernel_std) - normal_cdf(iy_p, iy + 0.5, kernel_std);
+
+              scalar_t dxw = normal_pdf(ix_p, ix + 0.5, kernel_std) - normal_pdf(ix_p + 1, ix + 0.5, kernel_std);
+              scalar_t dyw = normal_pdf(iy_p, iy + 0.5, kernel_std) - normal_pdf(iy_p + 1, iy + 0.5, kernel_std);
+
+              // calculate Gaussian weighted pixel value and set output pixel
+              sumvgo = static_cast<scalar_t>(0.0);
+              for (c = 0; c < C; ++c) {
+                scalar_t gradout = gradOutput[n][c][h][w];
+                scalar_t val = input[n][c][iy_p_cl][ix_p_cl];
+                sumvgo += val * gradout;
+
+                if (sumw > 0){
+                  // TODO: Use fastAtomicAdd
+                  atomicAdd(&gradInput[n][c][iy_p_cl][ix_p_cl], (xw * yw * gradout) / sumw);
+                }
+              }
+
+              sumvw         += xw * yw * sumvgo;
+              sumdwdgix     += dxw * yw;
+              sumdwdgiy     += dyw * xw;
+              sumvdwdgix    += dxw * yw * sumvgo;
+              sumvdwdgiy    += xw * dyw * sumvgo;
+            }
+          }
+        }
+
+        if (sumw > 0){
+           gix = - (sumdwdgix / (sumw * sumw)) * sumvw + static_cast<scalar_t>(1.) / sumw) * sumvdwdgix;
+           giy = - (sumdwdgiy / (sumw * sumw)) * sumvw + static_cast<scalar_t>(1.) / sumw) * sumvdwdgiy;
+        }
+
+        gradGrid[n][h][w][0] = gix;
+        gradGrid[n][h][w][1] = giy;
       }
     }
   }
@@ -514,6 +740,8 @@ namespace {
       const GridSamplerInterpolation interpolation_mode,
       const GridSamplerPadding padding_mode,
       bool align_corners,
+      const index_t kernel_size, // For Gaussian kernel
+      const scalar_t kernel_std, // For Gaussian kernel
       const index_t grad_input_memory_span) {
 
     index_t C = input.sizes[1];
@@ -717,6 +945,140 @@ namespace {
         gGrid_ptr_NDHW[0] = static_cast<scalar_t>(0);
         gGrid_ptr_NDHW[1] = static_cast<scalar_t>(0);
         gGrid_ptr_NDHW[2] = static_cast<scalar_t>(0);
+      } else if (interpolation_mode == GridSamplerInterpolation::Gaussian) {
+        index_t gix = static_cast<index_t>(0.0);
+        index_t giy = static_cast<index_t>(0.0);
+        index_t giz = static_cast<index_t>(0.0);
+
+        const index_t ix_k = static_cast<index_t>(::floor(ix));
+        const index_t iy_k = static_cast<index_t>(::floor(iy));
+        const index_t iz_k = static_cast<index_t>(::floor(iz));
+
+        // start index of Gaussian kernel
+        const index_t ix_nw = ix_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+        const index_t iy_nw = iy_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+        const index_t iz_nw = iz_k - static_cast<index_t>(::floor((kernel_size - 1) * 0.5);
+
+        scalar_t sumw = static_cast<scalar_t>(0.0);
+        index_t i, j, k, c;
+        for(i=0; i < f; i++){
+          for(j=0; j < f; j++){
+            for(k=0; k < f; k++){
+
+              // get surfaces to each neighbor:
+              index_t ix_p = ix_nw + i;
+              index_t iy_p = iy_nw + j;
+              index_t iz_p = iz_nw + k;
+
+              index_t ix_p_cl, iy_p_cl, iz_p_c;
+              if (padding_mode == GridSamplerPadding::Border){
+                //  clip coordinates to image borders
+                ix_p_cl = clip_coordinates(ix_p, inp_W);
+                iy_p_cl = clip_coordinates(iy_p, inp_H);
+                iz_p_cl = clip_coordinates(iz_p, inp_D);
+              } else if (padding_mode == GridSamplerPadding::Reflection) {
+                // reflect coordinates to image borders
+                ix_p_cl = reflect_coordinates(ix_p, static_cast<index_t>(0.0), 2 * inp_W);
+                iy_p_cl = reflect_coordinates(iy_p, static_cast<index_t>(0.0), 2 * inp_H);
+                iz_p_cl = reflect_coordinates(iz_p, static_cast<index_t>(0.0), 2 * inp_D);
+              } else {
+                ix_p_cl = ix_p;
+                iy_p_cl = iy_p;
+                iz_p_cl = iz_p;
+              }
+
+              // if antecedant value in image bounds
+              if within_bounds_3d(ix_p_cl, iy_p_cl, iz_p_c, inp_W, inp_H, inp_D){
+                scalar_t xw =  normal_cdf(ix_p + 1.0, ix + 0.5, kernel_std) - normal_cdf(ix_p, ix + 0.5, kernel_std);
+                scalar_t yw =  normal_cdf(iy_p + 1.0, iy + 0.5, kernel_std) - normal_cdf(iy_p, iy + 0.5, kernel_std);
+                scalar_t zw =  normal_cdf(iz_p + 1.0, iz + 0.5, kernel_std) - normal_cdf(iz_p, iz + 0.5, kernel_std);
+
+                // calculate Gaussian weighted pixel value and set output pixel
+                sumw += xw * yw * zw;
+              }
+            }
+          }
+        }
+
+
+        scalar_t sumvw = static_cast<scalar_t>(0.);
+        scalar_t sumdwdgix = static_cast<scalar_t>(0.);
+        scalar_t sumdwdgiy = static_cast<scalar_t>(0.);
+        scalar_t sumdwdgiz = static_cast<scalar_t>(0.);
+        scalar_t sumvdwdgix = static_cast<scalar_t>(0.);
+        scalar_t sumvdwdgiy = static_cast<scalar_t>(0.);
+        scalar_t sumvdwdgiz = static_cast<scalar_t>(0.);
+        scalar_t sumvgo = static_cast<scalar_t>(0.);
+
+        for(i=0; i < kernel_size; i++){
+          for(j=0; j < kernel_size; j++){
+            for(k=0; k < kernel_size; k++){
+              // get surfaces to each neighbor:
+              index_t ix_p = ix_nw + i;
+              index_t iy_p = iy_nw + j;
+              index_t iz_p = iz_nw + k;
+
+              index_t ix_p_cl, iy_p_cl, iz_p_c;
+              if (padding_mode == GridSamplerPadding::Border){
+                //  clip coordinates to image borders
+                ix_p_cl = clip_coordinates(ix_p, inp_W);
+                iy_p_cl = clip_coordinates(iy_p, inp_H);
+                iz_p_cl = clip_coordinates(iz_p, inp_D);
+              } else if (padding_mode == GridSamplerPadding::Reflection) {
+                // reflect coordinates to image borders
+                ix_p_cl = reflect_coordinates(ix_p, static_cast<index_t>(0.0), 2 * inp_W);
+                iy_p_cl = reflect_coordinates(iy_p, static_cast<index_t>(0.0), 2 * inp_H);
+                iz_p_cl = reflect_coordinates(iz_p, static_cast<index_t>(0.0), 2 * inp_D);
+              } else {
+                ix_p_cl = ix_p;
+                iy_p_cl = iy_p;
+                iz_p_cl = iz_p;
+              }
+
+              // if antecedant value in image bounds
+              if within_bounds_3d(ix_p_cl, iy_p_cl, iz_p_c, inp_W, inp_H, inp_D){
+                scalar_t xw =  normal_cdf(ix_p + 1.0, ix + 0.5, kernel_std) - normal_cdf(ix_p, ix + 0.5, kernel_std);
+                scalar_t yw =  normal_cdf(iy_p + 1.0, iy + 0.5, kernel_std) - normal_cdf(iy_p, iy + 0.5, kernel_std);
+                scalar_t zw =  normal_cdf(iz_p + 1.0, iz + 0.5, kernel_std) - normal_cdf(iz_p, iz + 0.5, kernel_std);
+
+                scalar_t dxw = normal_pdf(ix_p, ix + 0.5, kernel_std) - normal_pdf(ix_p + 1, ix + 0.5, kernel_std);
+                scalar_t dyw = normal_pdf(iy_p, iy + 0.5, kernel_std) - normal_pdf(iy_p + 1, iy + 0.5, kernel_std);
+                scalar_t dzw = normal_pdf(iz_p, iz + 0.5, kernel_std) - normal_pdf(iz_p + 1, iz + 0.5, kernel_std);
+
+                // calculate Gaussian weighted pixel value and set output pixel
+                sumvgo = static_cast<scalar_t>(0.0);
+                for (c = 0; c < C; ++c) {
+                  scalar_t gradout = gradOutput[n][c][z][h][w];
+                  scalar_t val = input[n][c][iz_p_c][iy_p_cl][ix_p_cl];
+                  sumvgo += val * gradout;
+
+                  if (sumw > 0){
+                    // TODO: Use fastAtomicAdd
+                    atomicAdd(&gradInput[n][c][iz_p_c][iy_p_cl][ix_p_cl], (xw * yw * zw * gradout) / sumw);
+                  }
+                }
+
+                sumvw         += xw * yw * zw * sumvgo;
+                sumdwdgix     += dxw * yw * zw;
+                sumdwdgiy     += dyw * xw * zw;
+                sumdwdgiz     += dzw * xw * yw;
+                sumvdwdgix    += dxw * yw * zw * sumvgo;
+                sumvdwdgiy    += xw * dyw * zw * sumvgo;
+                sumvdwdgiz    += xw * yw * dzw * sumvgo;
+              }
+            }
+          }
+
+          if (sumw > 0){
+             gix = - (sumdwdgix / (sumw * sumw)) * sumvw + static_cast<scalar_t>(1.) / sumw) * sumvdwdgix;
+             giy = - (sumdwdgiy / (sumw * sumw)) * sumvw + static_cast<scalar_t>(1.) / sumw) * sumvdwdgiy;
+             giz = - (sumdwdgiz / (sumw * sumw)) * sumvw + static_cast<scalar_t>(1.) / sumw) * sumvdwdgiz;
+          }
+
+          gradGrid[n][d][h][w][0] = gix;
+          gradGrid[n][d][h][w][1] = giy;
+          gradGrid[n][d][h][w][2] = giz;
+        }
       }
     }
   }
@@ -725,7 +1087,8 @@ namespace {
 // No shape checking needed here. See # NOTE [ grid_sampler Native Functions ].
 Tensor grid_sampler_2d_cuda(const Tensor& input, const Tensor& grid,
                             int64_t interpolation_mode, int64_t padding_mode,
-                            bool align_corners) {
+                            bool align_corners, int64_t kernel_size,
+                            float kernel_std) {
   auto N = input.size(0);
   auto C = input.size(1);
   auto H = grid.size(1);
@@ -744,7 +1107,9 @@ Tensor grid_sampler_2d_cuda(const Tensor& input, const Tensor& grid,
             getTensorInfo<scalar_t, int>(output),
             static_cast<GridSamplerInterpolation>(interpolation_mode),
             static_cast<GridSamplerPadding>(padding_mode),
-            align_corners);
+            align_corners,
+            static_cast<index_t>(kernel_size),
+            static_cast<scalar_t>(kernel_std);
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       } else {
         grid_sampler_2d_kernel<scalar_t>
@@ -755,7 +1120,9 @@ Tensor grid_sampler_2d_cuda(const Tensor& input, const Tensor& grid,
             getTensorInfo<scalar_t, int64_t>(output),
             static_cast<GridSamplerInterpolation>(interpolation_mode),
             static_cast<GridSamplerPadding>(padding_mode),
-            align_corners);
+            align_corners,
+            static_cast<index_t>(kernel_size),
+            static_cast<scalar_t>(kernel_std));
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       }
     });
@@ -766,7 +1133,8 @@ Tensor grid_sampler_2d_cuda(const Tensor& input, const Tensor& grid,
 // No shape checking needed here. See # NOTE [ grid_sampler Native Functions ].
 Tensor grid_sampler_3d_cuda(const Tensor& input, const Tensor& grid,
                             int64_t interpolation_mode, int64_t padding_mode,
-                            bool align_corners) {
+                            bool align_corners, int64_t kernel_size,
+                            float kernel_std) {
   auto N = input.size(0);
   auto D = grid.size(1);
   auto H = grid.size(2);
@@ -785,7 +1153,9 @@ Tensor grid_sampler_3d_cuda(const Tensor& input, const Tensor& grid,
             getTensorInfo<scalar_t, int>(output),
             static_cast<GridSamplerInterpolation>(interpolation_mode),
             static_cast<GridSamplerPadding>(padding_mode),
-            align_corners);
+            align_corners,
+            static_cast<index_t>(kernel_size),
+            static_cast<scalar_t>(kernel_std);
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       } else {
         grid_sampler_3d_kernel<scalar_t>
@@ -796,7 +1166,9 @@ Tensor grid_sampler_3d_cuda(const Tensor& input, const Tensor& grid,
             getTensorInfo<scalar_t, int64_t>(output),
             static_cast<GridSamplerInterpolation>(interpolation_mode),
             static_cast<GridSamplerPadding>(padding_mode),
-            align_corners);
+            align_corners,
+            static_cast<index_t>(kernel_size),
+            static_cast<scalar_t>(kernel_std));
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       }
     });
@@ -809,6 +1181,7 @@ std::tuple<Tensor, Tensor>
 grid_sampler_2d_backward_cuda(const Tensor& grad_output, const Tensor& input,
                               const Tensor& grid, int64_t interpolation_mode,
                               int64_t padding_mode, bool align_corners,
+                              int64_t kernel_size, float kernel_std,
                               std::array<bool,2> output_mask) {
   // See Note [Writing Nondeterministic Operations]
   // Nondeterministic because of atomicAdd usage
@@ -843,6 +1216,8 @@ grid_sampler_2d_backward_cuda(const Tensor& grad_output, const Tensor& input,
             static_cast<GridSamplerInterpolation>(interpolation_mode),
             static_cast<GridSamplerPadding>(padding_mode),
             align_corners,
+            static_cast<index_t>(kernel_size),
+            static_cast<scalar_t>(kernel_std),
             /*grad_input_memory_span =*/input_requires_grad ? static_cast<int>(grad_input.numel()) : 0,
             input_requires_grad);
         C10_CUDA_KERNEL_LAUNCH_CHECK();
@@ -858,6 +1233,8 @@ grid_sampler_2d_backward_cuda(const Tensor& grad_output, const Tensor& input,
             static_cast<GridSamplerInterpolation>(interpolation_mode),
             static_cast<GridSamplerPadding>(padding_mode),
             align_corners,
+            static_cast<index_t>(kernel_size),
+            static_cast<scalar_t>(kernel_std),
             /*grad_input_memory_span =*/input_requires_grad ? grad_input.numel() : 0,
             input_requires_grad);
         C10_CUDA_KERNEL_LAUNCH_CHECK();
@@ -871,7 +1248,7 @@ grid_sampler_2d_backward_cuda(const Tensor& grad_output, const Tensor& input,
 std::tuple<Tensor, Tensor>
 grid_sampler_3d_backward_cuda(const Tensor& grad_output, const Tensor& input,
                               const Tensor& grid, int64_t interpolation_mode, int64_t padding_mode,
-                              bool align_corners) {
+                              bool align_corners, int64_t kernel_size, float kernel_std) {
   // See Note [Writing Nondeterministic Operations]
   // Nondeterministic because of atomicAdd usage
   globalContext().alertNotDeterministic("grid_sampler_3d_backward_cuda");
@@ -897,6 +1274,8 @@ grid_sampler_3d_backward_cuda(const Tensor& grad_output, const Tensor& input,
             static_cast<GridSamplerInterpolation>(interpolation_mode),
             static_cast<GridSamplerPadding>(padding_mode),
             align_corners,
+            static_cast<index_t>(kernel_size),
+            static_cast<scalar_t>(kernel_std),
             /*grad_input_memory_span =*/static_cast<int>(grad_input.numel()));
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       } else {
@@ -911,6 +1290,8 @@ grid_sampler_3d_backward_cuda(const Tensor& grad_output, const Tensor& input,
             static_cast<GridSamplerInterpolation>(interpolation_mode),
             static_cast<GridSamplerPadding>(padding_mode),
             align_corners,
+            static_cast<index_t>(kernel_size),
+            static_cast<scalar_t>(kernel_std),
             /*grad_input_memory_span =*/grad_input.numel());
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       }
